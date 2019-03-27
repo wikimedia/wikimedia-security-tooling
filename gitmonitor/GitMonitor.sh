@@ -19,7 +19,7 @@
 set -euo pipefail
 
 # check binary dependencies
-bins=("cd" "git" "grep" "printf" "cut" "date" "hostname" "basename")
+bins=("git" "grep" "printf" "cut" "date" "hostname" "basename")
 for bin in "${bins[@]}"; do
     if [[ -z $(which $bin) ]]; then
         printf "dependency '$bin' does not appear to be installed - exiting.\n"
@@ -30,9 +30,17 @@ done
 # clone repo locally
 GM_REPO_PATH=${GM_REPO_URL##*/}
 if [[ -d $GM_REPO_PATH ]]; then
-    cd $GM_REPO_PATH && git checkout $GM_REPO_BRANCH && git pull && cd ..
+	if [[ -n "$GM_REPO_BRANCH" ]]; then
+		cd $GM_REPO_PATH && git checkout $GM_REPO_BRANCH && git pull && cd ..
+	else
+		rm -rf $GM_REPO_PATH && git clone $GM_REPO_URL
+	fi
 else
-    git clone -b $GM_REPO_BRANCH $GM_REPO_URL
+	if [[ -n "$GM_REPO_BRANCH" ]]; then
+		git clone -b $GM_REPO_BRANCH $GM_REPO_URL
+	else
+		git clone $GM_REPO_URL
+	fi
 fi
 
 # format SINCE

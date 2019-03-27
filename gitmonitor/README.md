@@ -22,7 +22,7 @@ Some quick-and-dirty bash to monitor string patterns within the commits to a git
 ## Installing
 
 1. ```git clone https://gerrit.wikimedia.org/r/wikimedia/security/tooling```
-2. Configure various environment variables - see comments within ```GitMonitor.sh``` header or [sample file provided](GM_env.sh).
+2. Configure various environment variables - see comments within ```GitMonitor.sh``` header or [sample file provided](GM_env.sh).  Note that GM_env* is a default pattern in [.gitignore](.gitignore)
 3. Set proper execute perms and go!
 
 ## Usage
