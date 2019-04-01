@@ -75,10 +75,10 @@ if [[ -n "$report_body" ]]; then
     from=${script_name##*/}"@"$(hostname -A)
     subject="Interesting git activity in: ${GM_REPO_URL#*://*/*/}"
     if [[ -n "$GM_DEBUG" ]]; then
-        printf "Subject: $subject\n\n$report_body | $GM_SENDMAIL -f \
-            $from $GM_MAIL_TO\n"
+        printf "To:$GM_MAIL_TO\nFrom:$from\nSubject: $subject\n\n$report_body \
+			| $GM_SENDMAIL -t"
     else
-        printf "Subject: $subject\n\n$report_body" | $GM_SENDMAIL -f \
-            $from $GM_MAIL_TO
+        printf "To:$GM_MAIL_TO\nFrom:$from\nSubject: $subject\n\n$report_body" \
+			| $GM_SENDMAIL -t
     fi
 fi
