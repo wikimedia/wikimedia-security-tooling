@@ -62,7 +62,7 @@ do
         printf "\nCOMMIT ID: $git_hash\n\n" &&
         printf '%s' "$repo_diff_url" &&
         printf -- '*%.0s' {1..10})
-    git_show=$(git show $git_hash | cut -c -80 | grep -C 3 "$GM_GREP_PAT" || true)
+    git_show=$(git show $git_hash | cut -c -80 | grep -E -C 3 "$GM_GREP_PAT" || true)
     if [[ -n "$git_show" ]]; then
         report_body="$report_body $commit_marker\n$git_show\n"
     fi
