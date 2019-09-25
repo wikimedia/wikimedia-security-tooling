@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+###############################################################################
+# Author: sbassett@wikimedia.org
+# License: Apache 2 <https://opensource.org/licenses/Apache-2.0>
+# Description:
+#     Simple http leaks searches based upon:
+#     - https://github.com/cure53/HTTPLeaks/blob/master/leak.html
+#     - https://mathiasbynens.be/demo/url-regex
+###############################################################################
+set -euo pipefail
+
+# validate arguments
+if ([ -z ${1+x} ] || ([ ! -d "$1" ] && [ ! -f "$1" ])); then
+	printf "One argument is required: {valid path}.  Exiting.\n"
+	exit 1
+fi
+
+# set variables
+readonly path="$1"
+
+readonly search="$(command -v grep 2> /dev/null)"
+readonly searchflags='-nrE'
+
+# naive way to search for various urls lingering about in code
+# yes, this can create lots of false positives for now,
+# but it proably shouldn't
+readonly http_leaks="((https?|ftp|file):)?//(\w+)"
+
+# search files in $path
+find $path -type d \( -path '*/.git*' -o \
+	-path '*/vendor*' -o \
+	-path '*/node_modules*' \) \
+	-prune -o -print0 | while read -d $'\0' file
+do
+	results=""
+	out=""
+	out=$(echo "$file" |xargs php -w |tr ";" "\n" \
+		|${search} ${searchflags} "${http_leaks}" || :)
+	if [ -n "${out}" ]; then results="${results}\n${file}\n${out}\n"; fi
+
+	printf "%b" "$results"
+done

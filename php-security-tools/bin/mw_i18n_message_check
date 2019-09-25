@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+###############################################################################
+# Author: sbassett@wikimedia.org, bawolff+wn@gmail.com
+# License: Apache 2 <https://opensource.org/licenses/Apache-2.0>
+# Description:
+#     Based upon: T205563
+#     Assumption: Any messages containing literal js will end in .js. Any other
+#         raw html message is in normal html context (not attribute)
+# Dependencies:
+#     awk
+#     cat
+#     grep
+#     jq (https://github.com/stedolan/jq)
+#     sed
+###############################################################################
+set -euo pipefail
+
+# validate arguments
+if ([ -z ${1+x} ] || ([ ! -d "$1" ] && [ ! -f "$1" ])); then
+	printf "One argument is required: {valid path}.  Exiting.\n"
+	exit 1
+fi
+
+# search mw message files (xxx.json) in current directory
+find "$@" -type d \( -path '*/.git*' -o \
+	-path '*/vendor*' -o \
+	-path '*/node_modules' \) \
+	-prune -o -name '*.json' -print0 | while read -d $'\0' file
+do
+	results=""
+
+	# check potentially bad html
+	out=""
+    out=$(cat "$file" | sed -E -e 's/<\/? ?(abbr|span|br|strong|em|pre|nowiki|charinsert|b|del|code|kbd|p|tt|div|i|big|sup|sub|samp|var|small|h1|h2|h3|h4|u)( ((class|title|lang|xml:lang|dir)=\\?["'\''][^=<>"'\'']*\\?["'\'']))* ?\/?>//g' -e 's/<!--//g' -e 's/<https?:\/\/[a-zA-Z0-9./-]*>//g' | grep -n '<' | awk '{print $0,"\n"}' || :)
+	if [ -n "${out}" ]; then
+		outstr="HTML detected within message file \"$file\". Please review!"
+		outborder=$(printf "%0.s-" {1..80})
+		outstr="${outborder}\n${outstr}\n${outborder}\n"
+		results="${results}${outstr}${out}\n\n"
+	fi
+
+	# check potentially bad json
+	out=""
+	out=$(cat "$file" | grep '^+' | sed -E -e 's/\\\\//g' -e 's/\\[nt"]//g' | grep '\\' || :)
+	if [ -n "${out}" ]; then
+		outstr="JSON escape sequence detected within file \"$file\". Please review!"
+		outborder=$(printf "%0.s-" {1..80})
+		outstr="${outborder}\n${outstr}\n${outborder}\n"
+		results="${results}${outstr}${out}\n\n"
+	fi
+
+	printf "%b" "$results"
+done

@@ -1,0 +1,631 @@
+#!/usr/bin/env bash
+################################################################################
+# Author: sbassett@wikimedia.org
+# License: Apache 2 <https://opensource.org/licenses/Apache-2.0>
+# Description:
+#   Script for running various application security tools
+#   See sample.env for a list of relevant environment variables
+################################################################################
+set -euo pipefail
+
+# Description: Check binary dependencies
+# Arguments: List of binaries from args
+# Output: Error message and exit
+function check_binaries() {
+	bins="$@"
+	for bin in "${bins[@]}"; do
+		if [[ -z $(command -v $bin) ]]; then
+			printf "Dependency '$bin' does not appear to be installed.\n"
+			printf "Exiting for now...\n"
+			exit 1
+		fi
+	done
+}
+
+# Description: Check relavent docker images
+# Arguments: Docker image pattern type
+# Output: Error message and exit
+function check_dockers() {
+	if [[ -z $(docker image ls --format {{.Repository}} "$@") ]]; then
+		printf "pst_* docker images do not appear to be built...\n"
+		printf "Have you run $PST_INSTALL_DIR$PST_BIN_DIR/build_dockers yet?\n"
+		printf "Exiting for now...\n"
+		exit 1
+	fi
+}
+
+# Description: Check for PST_ env vars from PST_INSTALL_DIR/.env
+# Arguments: None
+# Output: Error message and exit
+function check_env_vars() {
+    if [ -z ${PST_INSTALL_DIR+x} ]; then
+        printf "It doesn't seem like any PST_ environment variables exist.\n"
+        printf "Did you remember to 'eval \$(cat .env | sed 's/^/export /')'"
+        printf " within your installation directory?\n"
+        printf "Exiting for now...\n"
+        exit 1
+    fi
+}
+
+# Description: Display help message/usage
+# Arguments: None
+# Output: Help message
+function display_help() {
+    cat << EOF
+Usage:
+    -h|--help|help       Displays this help message
+    all                  Runs all tools and create a report
+    sec-check-ext        Runs phan mediawiki-optimized SecCheckPlugin (ext)
+    sec-check-gen        Runs phan SecCheckPlugin general scan
+    phan-sec             Runs security-focused phan checks
+    phpcs-sec            Runs security-focused phpcs checks
+    php-sec              Runs Symphony's security:check against composer.lock
+    php-snyk             Runs Snyk's CLI (auth required) against composer.lock
+    npm-sec              Run an npm audit if a valid package-lock.json exists
+    npm-out              Run an npm outdated if a valid package-lock.json exists
+    node-retire          Run retirejs
+    node-snyk            Run Snyk's CLI against package-lock.json
+    mw-php-sec           Runs mwSecSniff to find potentially dangerous PHP code
+    mw-i18n-sec          Runs i18n script to find potentially dangerous HTML
+    mw-http-leaks        Runs a very naive check for http leaks within HTML
+EOF
+exit 0
+}
+
+# Description: Process command line arguments/options
+# Arguments: $@
+# Output: None
+function process_arguments() {
+	# no arguments passed
+	if [[ $# -eq 0 ]] ; then
+		display_help
+	fi
+
+	# option
+	opt="$1"
+	shift
+
+	# check new arg $1 (path/dir), set BASE_DIR accordingly
+	if [ -z "${1+x}" ]; then
+		BASE_DIR="$PWD"
+	else
+		local dir_path="$1"
+		if [[ $1 =~ \.+ ]]; then
+			dir_path="$PWD"
+		elif [[ ! $1 == /* ]]; then
+			dir_path="$PWD/$1"
+		fi
+		if [ -d "$dir_path" ] || [ -f "$dir_path" ]; then
+			BASE_DIR="$dir_path"
+		else
+			printf "Argument '$dir_path'\n"
+			printf "does not appear to be a valid directory. Exiting.\n"
+			exit 1
+		fi
+		shift
+	fi
+
+	# all other args for functions below
+	func_args="$@"
+
+	# execute option
+	case $opt in
+		-h|--help|help)
+		display_help
+		;;
+		all)
+		run_all $BASE_DIR
+		;;
+    	sec-check-ext)
+		run_sec_check_ext $BASE_DIR
+    	;;
+		sec-check-gen)
+		run_sec_check_gen $BASE_DIR
+    	;;
+    	phan-sec)
+		run_phan_sec $BASE_DIR
+    	;;
+		phpcs-sec)
+		run_phpcs_sec $BASE_DIR
+		;;
+    	php-sec)
+		run_php_sec $BASE_DIR
+		;;
+		php-snyk)
+		run_php_snyk $BASE_DIR
+		;;
+		npm-sec)
+		run_npm_audit $BASE_DIR
+		;;
+		npm-out)
+		run_npm_outdated $BASE_DIR
+		;;
+		node-retire)
+		run_node_retire $BASE_DIR
+		;;
+		node-snyk)
+		run_node_snyk $BASE_DIR
+		;;
+		mw-php-sec)
+		run_mw_php_sec_sniff $BASE_DIR $func_args
+		;;
+		mw-i18n-sec)
+		run_mw_i18n_message_check $BASE_DIR
+		;;
+		mw-http-leaks)
+		run_mw_http_leaks_sniff $BASE_DIR
+		;;
+    	*)
+		display_help
+    	;;
+	esac
+}
+
+# Description: Check composer.lock exists in working dir $@
+# Arguments: $@
+# Outputs: Error message
+function check_composer_lock() {
+	if [ ! -f "$@/composer.lock" ]; then
+		printf "composer.lock file not found - has one been created?\n";
+	fi
+}
+
+# Description: Check package-lock.json exists in working dir $@
+# Arguments: $@
+# Outputs: Error message
+function check_package_lock() {
+	if [ -f "$@/npm-shrinkwrap.json" ]; then
+		printf "It looks like an 'npm-shrinkwrap.json' file exists within this directory.\n"
+		printf "This can cause problems when running various 'npm' commands.\n"
+		printf "Please back up or delete 'npm-shrinkwrap.json' and the \n"
+		printf "'node_modules' directory (if one exists) and run \n" 
+		printf "'npm install --package-lock' to proceed.\n\n"
+    fi
+
+	if [ ! -f "$@/package-lock.json" ]; then
+		printf "package-lock.json file not found - has one been created?\n";
+		printf "Please run 'npm install --package-lock' to proceed.\n"
+	fi
+}
+
+# Description: Check node_modules dir exists in working dir $@
+# Arguments: $@
+# Outputs: Error message
+check_node_modules_dir() {
+	if [ ! -d "$@/node_modules" ]; then
+		printf "Could not locate a 'node_modules' directory.\n"
+		printf "Some tools like 'npm outdated' need a local 'node_modules'\n"
+		printf "directory to be created via an 'npm install'.\n"
+	fi
+}
+
+# Description: Check for snyk cli token as PST_ env var
+# Arguments: None
+# Outputs: Error message
+function check_snyk_token() {
+	if [ -z ${PST_SNYK_TOKEN+x} ]; then
+		printf "No Snyk login token set - this is required by the Snyk CLI.\n";
+		printf "See documentation: https://snyk.io/docs/cli-authentication/ \n"
+	fi
+}
+
+# Description: Check if extension.json exists
+# Arguments: Base directory
+# Outputs: Error message
+function check_mw_ext_config() {
+	local dir="."
+
+	if [ ! -z ${1+x} ] && [ -d "$1" ]; then
+		dir="$1"
+	fi
+
+	local check_ext_msg=""
+
+	if [ ! -f "$dir/extension.json" ]; then
+		check_ext_msg="extension.json file not found..."
+	fi
+
+	printf "$check_ext_msg"
+}
+
+# Description: Check a few things to determine if this is an mw extension
+# Arguments: Base directory
+# Outputs: Error message
+function check_mw_ext_mw_install_dir() {
+	local dir="."
+	if [ ! -z ${1+x} ] && [ -d $1 ]; then
+		dir="$1"
+	fi
+
+	local check_mw_install_dir_msg=""
+	local grep_for_mw=$(grep "Installing MediaWiki" $dir/../../INSTALL 2>/dev/null || :)
+	if [ ! -d "$dir/../../extensions" ] || \
+		[ ! -f "$dir/../../INSTALL" ] || \
+		[ ${#grep_for_mw} -eq 0 ]; then
+		check_mw_install_dir_msg="MediaWiki parent directory not found..."
+	fi
+
+	printf "$check_mw_install_dir_msg"
+}
+
+# Description: Print a horizontal rule with '=' 80 chars long
+# Arguments: $@
+# Outputs: Horizontal rule of '=' 80 chars long
+function print_header() {
+	printf "%0.s=" {1..80}
+	printf "\n"
+	printf "$@"
+	printf "\n"
+	printf "%0.s=" {1..80}
+	printf "\n"
+}
+
+# Description: Run all tools, try to consolidate into cogent report
+# Arguments: $@
+# Outputs: None
+function run_all() {
+	local dir="$1"
+
+	printf "Running everything...\n\n"
+
+	local check1=$(check_mw_ext_config $dir)
+	local check2=$(check_mw_ext_mw_install_dir $dir)
+	if [ ${#check1} -lt 1 ] && [ ${#check2} -lt 1 ]; then
+		# run ext seccheck
+		print_header "Phan SecurityCheckPlugin: MediaWiki Extension"
+		run_sec_check_ext "$@"
+	else
+		# run general seccheck
+		print_header "Phan SecurityCheckPlugin: General"
+		run_sec_check_gen "$@"
+	fi
+	printf "\n"
+	print_header "Security-focused phan checks"
+	printf "Not yet implemented for run_all\n"
+	printf "\n"
+	print_header "Security-focused phpcs checks"
+	run_phpcs_sec "$@"
+	printf "\n"
+	print_header "Symphony's security:check against composer.lock"
+	run_php_sec "$@"
+	printf "\n"
+	print_header "Snyk's CLI (auth required) against composer.lock"
+	run_php_snyk "$@"
+	printf "\n"
+	print_header "npm audit if a valid package-lock.json exists"
+	run_npm_audit "$@"
+	printf "\n"
+	print_header "npm outdated if a valid package-lock.json exists"
+	run_npm_outdated "$@"
+	printf "\n"
+	print_header "node retirejs if package-lock.json and node_modules exist"
+	run_node_retire "$@"
+	printf "\n\n"
+	print_header "Snyk's CLI against package-lock.json"
+	run_node_snyk "$@"
+	printf "\n\n"
+	print_header "mwSecSniff to find potentially dangerous PHP code"
+	run_mw_php_sec_sniff "$@" 1234
+	printf "\n"
+	print_header "i18n script to find potentially dangerous HTML"
+	run_mw_i18n_message_check "$@"
+	printf "\n"
+	print_header "A very naive check for http leaks within HTML"
+	run_mw_http_leaks_sniff "$@"
+	printf "\n"
+	printf "All security checks complete.\n"
+}
+
+# Description: Run SecurityCheckPlugin w/ mw extension config
+# Arguments: $1 = directory to analyze
+# Outputs: SecurityCheckPlugin report text
+function run_sec_check_ext() {
+	local dir="$1"
+	local check1=$(check_mw_ext_config $dir)
+	local check2=$(check_mw_ext_mw_install_dir $dir)
+	if [ ${#check1} -gt 1 ]; then
+		printf "$check1 skipping run of ${FUNCNAME[0]}\n"
+		return 0
+	elif [ ${#check2} -gt 1 ]; then
+		printf "$check2 skipping run of ${FUNCNAME[0]}\n"
+		return 0
+	fi
+
+	docker run --rm -it --user root \
+		--entrypoint /bin/sh \
+		-v $dir/:/src pst_php:latest \
+		-c "php /opt/phan/vendor/phan/phan/phan \
+		-d . -k \
+		/opt/phan/vendor/mediawiki/phan-taint-check-plugin/scripts/mwext-config.php \
+		--output \"php://stdout\"" || :
+}
+
+# Description: Run SecurityCheckPlugin w/ general php config
+# Arguments: $1 = directory to analyze
+# Outputs: SecurityCheckPlugin report text
+function run_sec_check_gen() {
+	local dir="$1"
+	local check1=$(check_mw_ext_config $dir)
+	local check2=$(check_mw_ext_mw_install_dir $dir)
+	if [ ${#check1} -lt 1 ] && [ ${#check2} -lt 1 ]; then
+		printf "This code appears to be a MediaWiki extension.\n"
+		printf "You may want to run the 'sec-check-ext' option instead.\n\n"
+	fi
+
+	docker run --rm -it --user root \
+		--entrypoint /bin/sh \
+		-v $dir/:/src pst_php:latest \
+		-c "php /opt/phan/vendor/phan/phan/phan \
+		-d . -k \
+		/opt/phan/vendor/mediawiki/phan-taint-check-plugin/scripts/generic-config.php \
+		--output \"php://stdout\"" || :
+}
+
+# Description: Run phan, possibly optimized for security checks
+# Arguments: $1 = directory to analyze
+# Outputs: Phan report text
+function run_phan_sec() {
+	local dir="$1"
+	local phan_config="$dir/.phan/config.php"
+
+	# check .phan/config - suggest if not found
+	if [ ! -z ${PST_MAYBE_USE_EXISTING_PHAN_CONFIG+x} ] && \
+		[ $PST_MAYBE_USE_EXISTING_PHAN_CONFIG == 0 ] && \
+		[ -f "$phan_config" ]
+	then
+		printf "Running phan with existing .phan/config.php...\n\n"
+		docker run --rm -it --user root \
+			--entrypoint /bin/sh \
+			-v $dir/:/src pst_php:latest \
+			-c "composer install && php /opt/phan/vendor/phan/phan/phan -d /src" \
+			|| :
+	else
+		local tmp_phan_config="$dir/.phan/pst-config.php"
+		local tmp_phan_config_docker=".phan/pst-config.php"
+		printf "Running phan with php-security-tools phan config...\n"
+		printf "[ $tmp_phan_config ]\n\n"
+
+touch $tmp_phan_config;
+cat >$tmp_phan_config <<EOL
+<?php
+ini_set( 'xdebug.max_nesting_level', 1000 );
+return [
+	'target_php_version' => null,
+	'directory_list' => [
+		'src',
+		'includes',
+		'maintenance',
+		'modules',
+		'resources',
+		'tests'
+	],
+	'exclude_file_regex' => '@^vendor/.*/(tests?|Tests?)/@',
+	'exclude_analysis_directory_list' => [
+		'vendor/'
+	],
+	'quick_mode' => false,
+	'should_visit_all_nodes' => true,
+	'analyze_signature_compatibility' => true,
+	'minimum_severity' => 1,
+	'allow_missing_properties' => false,
+	'null_casts_as_any_type' => true,
+	'scalar_implicit_cast' => true,
+	'ignore_undeclared_variables_in_global_scope' => true,
+	'dead_code_detection' => false,
+	'dead_code_detection_prefer_false_negative' => true,
+	'read_type_annotations' => true,
+	'disable_suppression' => false,
+	'dump_ast' => false,
+	'dump_signatures_file' => null,
+	'expand_file_list' => false,
+	'progress_bar' => true,
+	'progress_bar_sample_rate' => 0.005,
+	'plugins' => [
+		'AlwaysReturnPlugin',
+ 		'DollarDollarPlugin',
+		'DuplicateArrayKeyPlugin',
+		'DuplicateExpressionPlugin',
+		'InvokePHPNativeSyntaxCheckPlugin',
+		'PregRegexCheckerPlugin',
+		'PrintfCheckerPlugin',
+		'SleepCheckerPlugin',
+		'SuspiciousParamOrderPlugin',
+		'UnreachableCodePlugin',
+		'UnusedSuppressionPlugin',
+	]
+];
+EOL
+
+		docker run --rm -it --user root \
+			--entrypoint /bin/sh \
+			-v $dir/:/src pst_php:latest \
+			-c "php /opt/phan/vendor/phan/phan/phan \
+			-d . -k $tmp_phan_config_docker \
+			--output \"php://stdout\"" \
+			|| :
+
+		# remove temp php-security-tools phan config
+		rm -rf $tmp_phan_config
+	fi
+}
+
+# Description: Run phpcs, possibly optimized for security checks
+# Arguments: $1 = directory to analyze
+# Outputs: Phpcs report text
+function run_phpcs_sec() {
+	local dir="$1"
+
+	docker run --rm -it --user nobody \
+		--entrypoint /bin/sh \
+		-v $dir/:/src pst_php:latest \
+		-c "/opt/phpcs/vendor/bin/phpcs --extensions=php,inc,lib,module,info \
+		--ignore=*/tests/*,*/.git/*,*/vendor/*,*/node_modules/* \
+		--standard=/opt/phpcs/vendor/pheromone/phpcs-security-audit/example_base_ruleset.xml /src " \
+		|| :
+}
+
+# Description: Run composer security:check
+# Arguments: $1 = directory to analyze
+# Outputs: Composer security:check report text
+function run_php_sec() {
+	local dir="$1"
+	local check1=$(check_composer_lock $dir)
+
+	if [ ${#check1} -lt 1 ]; then
+		docker run --rm -it --user nobody \
+			--entrypoint /bin/sh \
+			-v $dir:/src pst_php:latest \
+			-c "/opt/securitycheck/vendor/bin/security-checker security:check" \
+			|| :
+	else
+		printf "$check1\n"
+	fi
+}
+
+# Description: Run snyk against php's composer.lock
+# Arguments: $1 = directory to analyze
+# Outputs: Snyk report text
+function run_php_snyk() {
+	local dir="$1"
+	local check1=$(check_snyk_token)
+	local check2=$(check_composer_lock $dir)
+
+	if [ ${#check1} -lt 1 ] && [ ${#check2} -lt 1 ]; then
+		docker run --rm -it --user root \
+			--entrypoint /bin/sh --env SNYK_TOKEN=$PST_SNYK_TOKEN \
+			-v $dir/:/src pst_node:latest \
+			-c "snyk test --file=composer.lock" \
+			|| :
+	else
+		printf "$check1\n$check2\n"
+	fi
+}
+
+# Description: Run docker pst_node npm audit
+# Arguments: $1 = directory to analyze
+# Outputs: Npm audit report text
+function run_npm_audit() {
+	local dir="$1"
+	local check1=$(check_package_lock $dir)
+
+	if [ ${#check1} -lt 1 ]; then
+		docker run --rm -it --user root \
+			-v $dir/:/src pst_node:latest audit \
+			|| :
+	else
+		printf "$check1\n"
+	fi
+}
+
+# Description: Run docker pst_node npm outdated
+# Arguments: $1 = directory to analyze
+# Outputs: Npm outdated report text
+function run_npm_outdated() {
+	local dir="$1"
+	local check1=$(check_package_lock $dir)
+	local check2=$(check_node_modules_dir $dir)
+
+	if [ ${#check1} -lt 1 ] && [ ${#check2} -lt 1 ]; then
+		local out=$(docker run --rm -it --user root \
+			--entrypoint /bin/sh \
+			-v $dir/:/src pst_node:latest \
+			-c "npm outdated" || :)
+
+		if [ ${#out} -lt 1 ]; then
+			printf "No outdated npm packages found.\n"
+		else
+			printf "$out"
+		fi
+	else
+		if [ ${#check1} -gt 1 ]; then printf "$check1\n"; fi
+		if [ ${#check2} -gt 1 ]; then printf "$check2\n"; fi
+	fi
+}
+
+# Description: Run docker pst_node retirejs
+# Arguments: $1 = directory to analyze
+# Outputs: retirejs report text
+function run_node_retire() {
+    local dir="$1"
+    local check1=$(check_package_lock $dir)
+
+    if [ ${#check1} -lt 1 ]; then
+        local out=$(docker run --rm -it --user root \
+			--entrypoint /bin/sh \
+            -v $dir/:/src pst_node:latest \
+			-c "retire"
+            || :)
+        if [ ${#out} -lt 1 ]; then
+            printf "No retire-able npm packages found.\n"
+        else
+            printf "$out"
+        fi
+    else
+        printf "$check1.\n"
+    fi
+}
+
+# Description: Run snyk against node's package-lock.json
+# Arguments: $1 = directory to analyze
+# Outputs: Snyk report text
+function run_node_snyk() {
+	local dir="$1"
+	local check1=$(check_snyk_token)
+	local check2=$(check_package_lock $dir)
+
+	if [ ${#check1} -lt 1 ] && [ ${#check2} -lt 1 ]; then
+    	docker run --rm -it --user root \
+        	--entrypoint /bin/sh --env SNYK_TOKEN=$PST_SNYK_TOKEN \
+        	-v $dir/:/src pst_node:latest \
+        	-c "snyk test --file=package-lock.json" \
+			|| :
+	else
+		printf "$check1\n$check2\n"
+	fi
+}
+
+# Description: Run bin/mw_php_sec_sniff
+# Arguments: $1 = directory to analyze, $2 = function groups
+# Outputs: Grep output as text
+function run_mw_php_sec_sniff() {
+	local dir="$1"
+	local func_groups="1234"
+	if [ ! -z ${2+x} ]; then
+		func_groups="$2"
+	fi
+    "$PST_INSTALL_DIR$PST_BIN_DIR/mw_php_sec_sniff" $dir $func_groups
+}
+
+# Description: Run bin/mw_i18n_message_check
+# Arguments: $1 = directory to analyze
+# Outputs: Grep output as text
+function run_mw_i18n_message_check() {
+	local dir="$1"
+    "$PST_INSTALL_DIR$PST_BIN_DIR/mw_i18n_message_check" $dir
+}
+
+# Description: Run bin/mw_http_leaks_sniff
+# Arguments: $1 = directory to analyze
+# Outputs: Grep output as text
+function run_mw_http_leaks_sniff() {
+	local dir="$1"
+    "$PST_INSTALL_DIR$PST_BIN_DIR/mw_http_leaks_sniff" $dir
+}
+
+# Description: Main
+# Arguments: Arguments provided to the script
+# Output: None
+function main() {
+	# check .env vars
+	check_env_vars
+
+	# set bin dependencies
+	bins=("cat" "composer" "docker" "php" "sed")
+
+	check_binaries "${bins[@]}"
+	check_dockers "pst_*"
+	process_arguments "$@"
+}
+
+# Call main()
+main "$@"

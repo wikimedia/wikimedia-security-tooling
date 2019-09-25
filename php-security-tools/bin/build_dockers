@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+################################################################################
+# Author: sbassett@wikimedia.org
+# License: Apache 2 <https://opensource.org/licenses/Apache-2.0>
+# Description:
+#   Build relevant Dockerfiles within $DOCKERFILE_DIR
+#   Env variables (see sample.env):
+################################################################################
+set -euo pipefail
+
+if [ -f .env ]; then eval $(cat .env | sed 's/^/export /'); fi
+cd $PST_INSTALL_DIR/$PST_DOCKERFILE_DIR && docker-compose -p "pst" build

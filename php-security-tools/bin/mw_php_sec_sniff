@@ -1,0 +1,300 @@
+#!/usr/bin/env bash
+###############################################################################
+# Author: sbassett@wikimedia.org
+# License: Apache 2 <https://opensource.org/licenses/Apache-2.0>
+# Description:
+#     Simple PHP/MW security searches based upon:
+#     - https://www.mediawiki.org/wiki/Security_checklist_for_developers
+#     - https://www.mediawiki.org/wiki/Security_for_developers/Tutorial
+#     - https://w.wiki/8vF
+#     - https://stackoverflow.com/questions/3115559/exploitable-php-functions
+###############################################################################
+set -euo pipefail
+
+# validate arguments
+if ([ -z ${1+x} ] || ([ ! -d "$1" ] && [ ! -f "$1" ]) || [ -z ${2+x} ] || ! [[ "$2" =~ ^[0-9]+$ ]]); then
+	printf "Two arguments required: {valid path} and {function group [int]}.  Exiting.\n"
+	exit 1
+fi
+
+# set variables
+readonly path="$1"
+readonly groups="$2"  # {1, 2, 3, 4, 12, 134, 1234}
+
+# use certain groups of functions
+use_group_1=false
+use_group_2=false
+use_group_3=false
+use_group_4=false
+if [[ "$groups" == *"1"* ]]; then use_group_1=true; fi
+if [[ "$groups" == *"2"* ]]; then use_group_2=true; fi
+if [[ "$groups" == *"3"* ]]; then use_group_3=true; fi
+if [[ "$groups" == *"4"* ]]; then use_group_4=true; fi
+
+readonly search="$(command -v grep 2> /dev/null)"
+readonly searchflags='-nrE'
+
+readonly searchexcludes="--exclude-dir=.git \
+--exclude-dir=vendor \
+--exclude-dir=node_modules"
+
+# group 1: core php functions and patterns
+readonly dangerous_group_1="^(\s+)?(addslashes)(\s*)?(\()?(\(.*)?$\
+|^(\s+)?(alter_ini)(\s*)?(\()?(\(.*)?$\
+|^(\s+)?apache_(.+)?$\
+|^(\s+)?assert(\s*)?(\()?(\(.*)?$\
+|^(\s+)?base64_decode(\s*)?(\()?(\(.*)?$\
+|^(\s+)?create_function(\s*)?(\()?(\(.*)?$\
+|^(\s+)?define_syslog_variables(\s*)?(\()?(\(.*)?$\
+|^(\s+)?diskfreespace(\s*)?(\()?(\(.*)?$\
+|^(\s+)?disk_free_space(\s*)?(\()?(\(.*)?$\
+|^(\s+)?disk_total_space(\s*)?(\()?(\(.*)?$\
+|^(\s+)?echo(\s*)?(\()?(\(.*)?$\
+|^(\s+)?escapeshellarg(\s*)?(\()?(\(.*)?$\
+|^(\s+)?escapeshellcmd(\s*)?(\()?(\(.*)?$\
+|^(\s+)?eval(\s*)?(\()?(\(.*)?$\
+|^(\s+)?exec(\s*)?(\()?(\(.*)?$\
+|^(\s+)?expect_popen(\s*)?(\()?(\(.*)?$\
+|^(\s+)?fsockopen(\s*)?(\()?(\(.*)?$\
+|^(\s+)?ftp_(.+)?$\
+|^(\s+)?getcwd(\s*)?(\()?(\(.*)?$\
+|^(\s+)?getenv(\s*)?(\()?(\(.*)?$\
+|^(\s+)?getlastmo(\s*)?(\()?(\(.*)?$\
+|^(\s+)?getmygid(\s*)?(\()?(\(.*)?$\
+|^(\s+)?getmyinode(\s*)?(\()?(\(.*)?$\
+|^(\s+)?getmypid(\s*)?(\()?(\(.*)?$\
+|^(\s+)?getmyuid(\s*)?(\()?(\(.*)?$\
+|^(\s+)?get_cfg_var(\s*)?(\()?(\(.*)?$\
+|^(\s+)?get_current_user(\s*)?(\()?(\(.*)?$\
+|^(\s+)?header(\s*)?(\()?(\(.*)?$\
+|^(\s+)?highlight_file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?include(\s*)?(\()?(\(.*)?$\
+|^(\s+)?include_once(\s*)?(\()?(\(.*)?$\
+|^(\s+)?include(\s*)\
+|^(\s+)?include_once(\s*)\
+|^(\s+)?ini_alter(\s*)?(\()?(\(.*)?$\
+|^(\s+)?ini_get_all(\s*)?(\()?(\(.*)?$\
+|^(\s+)?ini_restore(\s*)?(\()?(\(.*)?$\
+|^(\s+)?ini_set(\s*)?(\()?(\(.*)?$\
+|^(\s+)?mail(\s*)?(\()?(\(.*)?$\
+|^(\s+)?max_execution_time(\s*)?(\()?(\(.*)?$\
+|^(\s+)?openlog(\s*)?(\()?(\(.*)?$\
+|^(\s+)?passthru(\s*)?(\()?(\(.*)?$\
+|^(\s+)?parse_ini_file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?parse_str(\s*)?(\()?(\(.*)?$\
+|^(\s+)?pcntl_exec(\s*)?(\()?(\(.*)?$\
+|^(\s+)?phpinfo(\s*)?(\()?(\(.*)?$\
+|^(\s+)?php_uname(\s*)?(\()?(\(.*)?$\
+|^(\s+)?pfsockopen(\s*)?(\()?(\(.*)?$\
+|^(\s+)?popen(\s*)?(\()?(\(.*)?$\
+|^(\s+)?posix_(.+)?$\
+|^(\s+)?preg_(.+)?$\
+|^(\s+)?print(\s*)?(\()?(\(.*)?$\
+|^(\s+)?print_r(\s*)?(\()?(\(.*)?$\
+|^(\s+)?proc_close(\s*)?(\()?(\(.*)?$\
+|^(\s+)?proc_get_status(\s*)?(\()?(\(.*)?$\
+|^(\s+)?proc_nice(\s*)?(\()?(\(.*)?$\
+|^(\s+)?proc_open(\s*)?(\()?(\(.*)?$\
+|^(\s+)?proc_terminate(\s*)?(\()?(\(.*)?$\
+|^(\s+)?putenv(\s*)?(\()?(\(.*)?$\
+|^(\s+)?ReflectionFunction(\s*)?(\()?(\(.*)?$\
+|^(\s+)?require(\s*)?(\()?(\(.*)?$\
+|^(\s+)?require_once(\s*)?(\()?(\(.*)?$\
+|^(\s+)?require(\s*)\
+|^(\s+)?require_once(\s*)\
+|^(\s+)?runkit_method_add(\s*)?(\()?(\(.*)?$\
+|^(\s+)?serialize(\s*)?(\()?(\(.*)?$\
+|^(\s+)?set_include_path(\s*)?(\()?(\(.*)?$\
+|^(\s+)?set_time_limit(\s*)?(\()?(\(.*)?$\
+|^(\s+)?socket_(.+)?$\
+|^(\s+)?shell_exec(\s*)?(\()?(\(.*)?$\
+|^(\s+)?syslog(\s*)?(\()?(\(.*)?$\
+|^(\s+)?system(\s*)?(\()?(\(.*)?$\
+|^(\s+)?unserialize(\s*)?(\()?(\(.*)?$\
+|^(\s+)?var_dump(\s*)?(\()?(\(.*)?$\
+|^(\s+)?virtual(\s*)?(\()?(\(.*)?$\
+|^(\s+)?xmlrpc_(.+)?$\
+|\`\
+|\\\$_COOKIE\
+|\\\$_GET\
+|\\\$_POST\
+|\\\$_REQUEST\
+|\\\$_SERVER\
+|\\\$GLOBALS"
+
+# group 2: mediawiki-specific functions
+readonly dangerous_group_2="^(\s+)?buildLike(\s*)?(\()?(\(.*)?$\
+|^(\s+)?delete(\s*)?(\()?(\(.*)?$\
+|^(\s+)?deleteJoin(\s*)?(\()?(\(.*)?$\
+|^(\s+)?Html::rawElement(\s*)?(\()?(\(.*)?$\
+|^(\s+)?insert(\s*)?(\()?(\(.*)?$\
+|^(\s+)?insertSelect(\s*)?(\()?(\(.*)?$\
+|^(\s+)?Linker::links(\s*)?(\()?(\(.*)?$\
+|>plain(\s*)?(\()?(\(.*)?$\
+|^(\s+)?query(\s*)?(\()?(\(.*)?$\
+|>rawParams(\s*)?(\()?(\(.*)?$\
+|^(\s+)?Sanitizer::stripAllTags(\s*)?(\()?(\(.*)?$\
+|^(\s+)?select(\s*)?(\()?(\(.*)?$\
+|^(\s+)?selectField(\s*)?(\()?(\(.*)?$\
+|^(\s+)?selectRow(\s*)?(\()?(\(.*)?$\
+|^(\s+)?Shell::command(\s*)?(\()?(\(.*)?$\
+|>text(\s*)?(\()?(\(.*)?$\
+|^(\s+)?update(\s*)?(\()?(\(.*)?$\
+|^(\s+)?wfShellExec(\s*)?(\()?(\(.*)?$\
+|^(\s+)?Xml::openElement(\s*)?(\()?(\(.*)?$\
+|^(\s+)?Xml::tags(\s*)?(\()?(\(.*)?$"
+
+
+# group 3: functions with callbacks
+readonly dangerous_group_3="^(\s+)?call_user_func(\s*)?(\()?(\(.*)?$\
+|^(\s+)?call_user_func_array(\s*)?(\()?(\(.*)?$\
+|^(\s+)?ob_start(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_diff_uassoc(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_diff_ukey(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_filter(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_intersect_uassoc(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_intersect_ukey(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_map(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_reduce(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_udiff_assoc(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_udiff_uassoc(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_udiff(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_uintersect_assoc(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_uintersect_uassoc(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_uintersect(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_walk_recursive(\s*)?(\()?(\(.*)?$\
+|^(\s+)?array_walk(\s*)?(\()?(\(.*)?$\
+|^(\s+)?assert_options(\s*)?(\()?(\(.*)?$\
+|^(\s+)?iterator_apply(\s*)?(\()?(\(.*)?$\
+|^(\s+)?register_shutdown_function(\s*)?(\()?(\(.*)?$\
+|^(\s+)?register_tick_function(\s*)?(\()?(\(.*)?$\
+|^(\s+)?set_error_handler(\s*)?(\()?(\(.*)?$\
+|^(\s+)?set_exception_handler(\s*)?(\()?(\(.*)?$\
+|^(\s+)?session_set_save_handler(\s*)?(\()?(\(.*)?$\
+|^(\s+)?spl_autoload_register(\s*)?(\()?(\(.*)?$\
+|^(\s+)?sqlite_create_aggregate(\s*)?(\()?(\(.*)?$\
+|^(\s+)?sqlite_create_function(\s*)?(\()?(\(.*)?$\
+|^(\s+)?uasort(\s*)?(\()?(\(.*)?$\
+|^(\s+)?uksort(\s*)?(\()?(\(.*)?$\
+|^(\s+)?usort(\s*)?(\()?(\(.*)?$"
+
+# group 4: filesystem functions
+readonly dangerous_group_4="^(\s+)?bzopen(\s*)?(\()?(\(.*)?$\
+|^(\s+)?chgrp(\s*)?(\()?(\(.*)?$\
+|^(\s+)?chmod(\s*)?(\()?(\(.*)?$\
+|^(\s+)?chown(\s*)?(\()?(\(.*)?$\
+|^(\s+)?copy(\s*)?(\()?(\(.*)?$\
+|^(\s+)?exif_read_data(\s*)?(\()?(\(.*)?$\
+|^(\s+)?exif_thumbnail(\s*)?(\()?(\(.*)?$\
+|^(\s+)?exif_imagetype(\s*)?(\()?(\(.*)?$\
+|^(\s+)?file_exists(\s*)?(\()?(\(.*)?$\
+|^(\s+)?file_get_contents(\s*)?(\()?(\(.*)?$\
+|^(\s+)?file_put_contents(\s*)?(\()?(\(.*)?$\
+|^(\s+)?file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?fileatime(\s*)?(\()?(\(.*)?$\
+|^(\s+)?filectime(\s*)?(\()?(\(.*)?$\
+|^(\s+)?filegroup(\s*)?(\()?(\(.*)?$\
+|^(\s+)?fileinode(\s*)?(\()?(\(.*)?$\
+|^(\s+)?filemtime(\s*)?(\()?(\(.*)?$\
+|^(\s+)?fileowner(\s*)?(\()?(\(.*)?$\
+|^(\s+)?fileperms(\s*)?(\()?(\(.*)?$\
+|^(\s+)?filesize(\s*)?(\()?(\(.*)?$\
+|^(\s+)?filetype(\s*)?(\()?(\(.*)?$\
+|^(\s+)?fopen(\s*)?(\()?(\(.*)?$\
+|^(\s+)?get_meta_tags(\s*)?(\()?(\(.*)?$\
+|^(\s+)?getimagesize(\s*)?(\()?(\(.*)?$\
+|^(\s+)?glob(\s*)?(\()?(\(.*)?$\
+|^(\s+)?gzfile(\s*)?(\()?(\(.*)?$\
+|^(\s+)?gzopen(\s*)?(\()?(\(.*)?$\
+|^(\s+)?hash_file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?hash_hmac_file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?hash_update_file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagecreatefromgif(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagecreatefromjpeg(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagecreatefrompng(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagecreatefromwbmp(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagecreatefromxbm(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagecreatefromxpm(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagepng(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagewbmp(\s*)?(\()?(\(.*)?$\
+|^(\s+)?image2wbmp(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagejpeg(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagexbm(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagegif(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagegd(\s*)?(\()?(\(.*)?$\
+|^(\s+)?imagegd2(\s*)?(\()?(\(.*)?$\
+|^(\s+)?iptcembed(\s*)?(\()?(\(.*)?$\
+|^(\s+)?is_dir(\s*)?(\()?(\(.*)?$\
+|^(\s+)?is_executable(\s*)?(\()?(\(.*)?$\
+|^(\s+)?is_file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?is_link(\s*)?(\()?(\(.*)?$\
+|^(\s+)?is_readable(\s*)?(\()?(\(.*)?$\
+|^(\s+)?is_uploaded_file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?is_writable(\s*)?(\()?(\(.*)?$\
+|^(\s+)?is_writeable(\s*)?(\()?(\(.*)?$\
+|^(\s+)?lchown(\s*)?(\()?(\(.*)?$\
+|^(\s+)?link(\s*)?(\()?(\(.*)?$\
+|^(\s+)?linkinfo(\s*)?(\()?(\(.*)?$\
+|^(\s+)?lchgrp(\s*)?(\()?(\(.*)?$\
+|^(\s+)?lstat(\s*)?(\()?(\(.*)?$\
+|^(\s+)?md5_file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?mkdir(\s*)?(\()?(\(.*)?$\
+|^(\s+)?move_uploaded_file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?parse_ini_file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?pathinfo(\s*)?(\()?(\(.*)?$\
+|^(\s+)?php_strip_whitespace(\s*)?(\()?(\(.*)?$\
+|^(\s+)?read_exif_data(\s*)?(\()?(\(.*)?$\
+|^(\s+)?readfile(\s*)?(\()?(\(.*)?$\
+|^(\s+)?readgzfile(\s*)?(\()?(\(.*)?$\
+|^(\s+)?readlink(\s*)?(\()?(\(.*)?$\
+|^(\s+)?realpath(\s*)?(\()?(\(.*)?$\
+|^(\s+)?rename(\s*)?(\()?(\(.*)?$\
+|^(\s+)?rmdir(\s*)?(\()?(\(.*)?$\
+|^(\s+)?sha1_file(\s*)?(\()?(\(.*)?$\
+|^(\s+)?show_source(\s*)?(\()?(\(.*)?$\
+|^(\s+)?SplFileObject(\s*)?(\()?(\(.*)?$\
+|^(\s+)?stat(\s*)?(\()?(\(.*)?$\
+|^(\s+)?symlink(\s*)?(\()?(\(.*)?$\
+|^(\s+)?tempnam(\s*)?(\()?(\(.*)?$\
+|^(\s+)?tmpfile(\s*)?(\()?(\(.*)?$\
+|^(\s+)?touch(\s*)?(\()?(\(.*)?$\
+|^(\s+)?unlink(\s*)?(\()?(\(.*)?$"
+
+
+# search files in $path
+find $path -type d \( -path '*/.git*' -o \
+	-path '*/vendor*' -o \
+	-path '*/node_modules*' \) \
+	-prune -o -name '*.php' -print0 | while read -d $'\0' file
+do
+	results=""
+
+	# TODO: dynamically loop over this instead of all
+	# these gross control statements
+	if [ $use_group_1 == true ]; then
+		out=""
+		out=$(echo "$file" |xargs php -w |tr ";" "\n" \
+			|${search} ${searchexcludes} ${searchflags} "${dangerous_group_1}" || :)
+		if [ -n "${out}" ]; then results="${results}\n${file}\n${out}\n"; fi
+	fi
+	if [ $use_group_2 == true ]; then
+		out=""
+        out=$(echo "$file" |xargs php -w |tr ";" "\n" \
+            |${search} ${searchexcludes} ${searchflags} "${dangerous_group_2}" || :)
+        if [ -n "${out}" ]; then results="${results}\n${file}\n${out}\n"; fi
+    fi
+	if [ $use_group_3 == true ]; then
+		out=""
+        out=$(echo "$file" |xargs php -w |tr ";" "\n" \
+            |${search} ${searchexcludes} ${searchflags} "${dangerous_group_3}" || :)
+        if [ -n "${out}" ]; then results="${results}\n${file}\n${out}\n"; fi
+    fi
+	if [ $use_group_4 == true ]; then
+		out=""
+        out=$(echo "$file" |xargs php -w |tr ";" "\n" \
+            |${search} ${searchexcludes} ${searchflags} "${dangerous_group_4}" || :)
+        if [ -n "${out}" ]; then results="${results}\n${file}\n${out}\n"; fi
+    fi
+
+	printf "%b" "$results"
+done
