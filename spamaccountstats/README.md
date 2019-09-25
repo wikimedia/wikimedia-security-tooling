@@ -1,13 +1,12 @@
 # SpamAccountStats
 
-A Python script to generate statistics for new account creations to determine
-if the Users/IPs are within stopforumspam.com's spam lists.  Developed to
-1) analyze the potential efficacy of stopforumspam.com's spam lists related
-to suspicious account creations upon various Wikimedia projects and 2) to serve
-as a basic proof-of-concept for security-monitoring tooling for certain
-suspicious events as the occur on various Wikimedia projects.
+A Python script to generate statistics for new account creations to determine if the Users/IPs are within stopforumspam.com's spam lists.
 
-n.b. As it currently exists, this should NOT be considered production code.
+Developed to:
+1. Analyze the potential efficacy of stopforumspam.com's spam lists related to suspicious account creations upon various Wikimedia projects.
+2. Serve as a basic proof-of-concept for security-monitoring tooling for certain suspicious events as the occur on various Wikimedia projects.
+
+*n.b.* As it currently exists, this should **NOT** be considered production code.
 
 ## Prerequisites
 
@@ -39,14 +38,14 @@ zlib
 2. ```chmod +x SpamAccountStats.py && ./SpamAccountStats.py {args...}```
 3. SpamAccountStats.py has a few arguments:
    1. ```-h``` = displays help/arguments and exits.
-   2. ```{project}``` = in the form of {lang code}.{project type}, e.g. ```en.wikipedia```.
+   2. ```{project}``` = in the form of ```{lang code}.{project type}```, e.g. ```en.wikipedia```.
    3. ```-d```, ```--date``` = a date range in a few different supported formats:
-      1. -d {int}h = e.g. 1h, range of current utc to 1 hour ago.
-      2. -d {int}d = e.g. 30d, range of current utc to 30 days ago.
-      3. -d YYYY-MM-DD = range of current utc to YYYY-MM-DD days ago.
-      4. -d YYYY-MM-DD-yyyy-mm-dd = date range (utc) from YYYY-MM-DD to yyyy-mm-dd.
-      5. -d YYYY-MM-DDTHH:MM:SSZ = range of current utc to YYYY-MM-DDTHH:MM:SSZ days ago.
-      6. -d YYYY-MM-DDTHH:MM:SSZ-yyyy-mm-ddThh:mm:ssZ = date range (utc) from YYYY-MM-DDTHH:MM:SSZ to yyyy-mm-ddThh:mm:ssZ (what mediawiki API tends to use).
+      1. ```-d {int}h``` = e.g. ```1h```, range of current utc to 1 hour ago.
+      2. ```-d {int}d``` = e.g. ```30d```, range of current utc to 30 days ago.
+      3. ```-d YYYY-MM-DD``` = range of current utc to ```YYYY-MM-DD``` days ago.
+      4. ```-d YYYY-MM-DD-yyyy-mm-dd``` = date range (utc) from ```YYYY-MM-DD``` to ```yyyy-mm-dd```.
+      5. ```-d YYYY-MM-DDTHH:MM:SSZ``` = range of current utc to ```YYYY-MM-DDTHH:MM:SSZ``` days ago.
+      6. ```-d YYYY-MM-DDTHH:MM:SSZ-yyyy-mm-ddThh:mm:ssZ``` = date range (utc) from ```YYYY-MM-DDTHH:MM:SSZ``` to ```yyyy-mm-ddThh:mm:ssZ``` (what mediawiki API tends to use).
    4. ```-r```, ```--raw``` = raw CSV report output, no informational header.
    5. ```--sfsapi``` = also check the StopForumSpam API via url defined as the ```SFS_API_URL``` environment variable.
 
