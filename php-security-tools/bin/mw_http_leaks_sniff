@@ -19,7 +19,7 @@ fi
 readonly path="$1"
 
 readonly search="$(command -v grep 2> /dev/null)"
-readonly searchflags='-nrE'
+readonly searchflags='-nrE --color=always'
 
 # naive way to search for various urls lingering about in code
 # yes, this can create lots of false positives for now,
