@@ -17,10 +17,12 @@ sed
 1. ```git clone "https://gerrit.wikimedia.org/r/wikimedia/security/tooling"```
 
 ## Usage
-1. Configure ```.env``` to your liking and run something like: ```eval $(cat .env | sed 's/^/export /')``` - sample values provided within ```sample.env```
-2. ```chmod +x bin/run && bin/run {args...}``` (args is typically just one argument: the path to the code)
-3. Optionally alias ```bin/run``` to something shorter: ```alias pst="/path/to/pst/install/bin/run" or drop a similar script into /usr/local/bin or somewhere similar.
-4. The PHP-Security-Tools run script has a few options/arguments:
+1. ```cd php-security-tools```
+2. Configure ```.env``` to your liking and run something like: ```eval $(cat .env | sed 's/^/export /')``` - sample values provided within ```sample.env```
+3. ```bin/build_dockers```
+4. ```bin/run {args...}``` (args is typically just one argument: the path to the code)
+5. Optionally alias ```bin/run``` to something shorter: ```alias pst="/path/to/pst/install/bin/run" or drop a similar script into /usr/local/bin or somewhere similar.
+6. The PHP-Security-Tools run script has a few options/arguments:
    1. -h | --help | help = displays a help message with different tool options
    2. all = Runs all tools and create a report
    3. sec-check-ext = Runs phan mediawiki-optimized SecCheckPlugin (ext)
