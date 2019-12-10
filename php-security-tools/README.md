@@ -28,7 +28,7 @@ sed
    5. phan-sec = Runs security-focused phan checks
    6. phpcs-sec = Runs security-focused phpcs checks
    7. php-sec = Runs Symphony's security:check against composer.lock
-   8. php-snyk = Runs Snyk's CLI (auth required) against composer.lock
+   8. php-snyk = Runs Snyk's CLI ([auth required](https://app.snyk.io/signup)) against composer.lock
    9. npm-sec = Run an npm audit if a valid package-lock.json exists
    10. npm-out = Run an npm outdated if a valid package-lock.json exists
    11. node-retire = Run retirejs
